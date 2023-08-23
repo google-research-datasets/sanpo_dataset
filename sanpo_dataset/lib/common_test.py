@@ -56,6 +56,17 @@ class CommonTest(tf.test.TestCase):
         _SYNTHETIC_SESSION_NAME,
     )
 
+  def test_labelmap(self):
+    labelmap_name_to_id = common.get_labelmap_name_to_id()
+    self.assertLen(labelmap_name_to_id, 31)
+    self.assertEqual(labelmap_name_to_id['unlabeled'], 0)
+    self.assertEqual(labelmap_name_to_id['terrain'], 30)
+
+    labelmap_id_to_name = common.get_labelmap_id_to_name()
+    self.assertLen(labelmap_id_to_name, 31)
+    self.assertEqual(labelmap_id_to_name[0], 'unlabeled')
+    self.assertEqual(labelmap_id_to_name[30], 'terrain')
+
   def test_load_camera_poses_from_csv(self):
     camera_poses = common.load_camera_poses_from_csv(
         os.path.join(self.real_session_dir, 'camera_chest', 'camera_poses.csv')

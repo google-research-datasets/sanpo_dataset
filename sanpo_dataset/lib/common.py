@@ -89,15 +89,6 @@ def wrapped_open(filename, mode):
   Returns:
     An object that can be read()
   """
-  # within candled fog,
-  #   in nacreous light,
-  # some secrets are hidden
-  #   away from mere sight
-
-  # mere echoes remain now,
-  #   of something once real,
-  # source coude now enshrouded
-  #   by copybara's seal
   return open(filename, mode)
 
 
@@ -194,9 +185,9 @@ class SanpoConfig:
       instance-level segmentation masks
     feature_camera_pose (FeatureFilterOption): Whether to include camera pose
     dataset_view_mode (DatasetViewMode): What view of the sessions to provide.
-    target_shape (Tuple[h,w]): Optional shape to resize all maps to. Note:
-      This code does not do cropping. If target_shape=None, then
-      RGB images and depth maps may have different sizes.
+    target_shape (Tuple[h,w]): Optional shape to resize all maps to. Note: This
+      code does not do cropping. If target_shape=None, then RGB images and depth
+      maps may have different sizes.
     num_video_frames: Optional. Required when using the video modes.
     video_frame_stride: Optional. Default is 1. Defines stride to generate video
       samples.
@@ -756,7 +747,9 @@ class FrameExample:
     )
 
 
-def get_labelmap_name_to_id(folder=None, filename='labelmap_open_source.json'):
+def get_labelmap_name_to_id(
+    folder=None, filename='labelmap.json'
+) -> Mapping[str, int]:
   """Get SANPO label map, mapping names to IDs.
 
   Args:
@@ -772,6 +765,8 @@ def get_labelmap_name_to_id(folder=None, filename='labelmap_open_source.json'):
   return json.loads(labelmap_filename.read_text())
 
 
-def get_labelmap_id_to_name(folder=None, filename='labelmap_open_source.json'):
+def get_labelmap_id_to_name(
+    folder=None, filename='labelmap.json'
+) -> Mapping[int, str]:
   name_to_id = get_labelmap_name_to_id(folder, filename)
   return {label_id: name for name, label_id in name_to_id.items()}
