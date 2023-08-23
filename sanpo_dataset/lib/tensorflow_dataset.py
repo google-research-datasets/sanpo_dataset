@@ -17,23 +17,25 @@
 import collections
 import functools
 import io
+import itertools
 import os
 import pathlib
 import random
-from typing import Iterator, List, Mapping, Tuple, Union
+from typing import Any, Iterator, Mapping, Optional, Tuple, Union
 
 import numpy as np
 from sanpo_dataset.lib import common
 import tensorflow as tf
 
 
+TRAIN_SPLITNAME = 'train'
+TEST_SPLITNAME = 'test'
+
 _SANPO_REAL_DIRNAME = 'sanpo-real'
 _SANPO_SYNTHETIC_DIRNAME = 'sanpo-synthetic'
 _TRAIN_SPLIT_FILENAME = 'splits/train_session_ids.txt'
 _TEST_SPLIT_FILENAME = 'splits/test_session_ids.txt'
-_TRAIN_SPLITNAME = 'train'
-_TEST_SPLITNAME = 'test'
-_DATA_SPLITNAMES = [_TRAIN_SPLITNAME, _TEST_SPLITNAME]
+_DATA_SPLITNAMES = [TRAIN_SPLITNAME, TEST_SPLITNAME]
 _INSTANCE_ID_DIVISOR = 256.0
 
 
@@ -81,7 +83,7 @@ class SanpoDataset:
           ),
           config=self.builder_config,
       )
-      self._data_sessions[_TRAIN_SPLITNAME].extend(
+      self._data_sessions[TRAIN_SPLITNAME].extend(
           self._real_sessions_train_list.get_valid_sessions()
       )
       self._real_sessions_test_list = common.SanpoSessionList(
@@ -91,7 +93,7 @@ class SanpoDataset:
           ),
           config=self.builder_config,
       )
-      self._data_sessions[_TEST_SPLITNAME].extend(
+      self._data_sessions[TEST_SPLITNAME].extend(
           self._real_sessions_test_list.get_valid_sessions()
       )
 
@@ -106,7 +108,7 @@ class SanpoDataset:
           ),
           config=self.builder_config,
       )
-      self._data_sessions[_TRAIN_SPLITNAME].extend(
+      self._data_sessions[TRAIN_SPLITNAME].extend(
           self._synthetic_sessions_train_list.get_valid_sessions()
       )
       self._synthetic_sessions_test_list = common.SanpoSessionList(
@@ -116,9 +118,15 @@ class SanpoDataset:
           ),
           config=self.builder_config,
       )
-      self._data_sessions[_TEST_SPLITNAME].extend(
+      self._data_sessions[TEST_SPLITNAME].extend(
           self._synthetic_sessions_test_list.get_valid_sessions()
       )
+
+    if not self._data_sessions[TRAIN_SPLITNAME]:
+      raise ValueError('Train split is empty.')
+
+    if not self._data_sessions[TEST_SPLITNAME]:
+      raise ValueError('Test split is empty.')
 
     # Shuffle the train and test sessions ids.
     for _, sessions_list in self._data_sessions.items():
@@ -127,17 +135,10 @@ class SanpoDataset:
   def _get_tensor_signature(self) -> Mapping[str, tf.TensorSpec]:
     """Return output signature for tf.data.Dataset `from_generator`."""
 
-    # TODO(kwilber, sagarwaghmare): Define signature for video mode.
-    if self.builder_config.dataset_view_mode not in [
-        common.DatasetViewMode.MONO_VIEW_FRAME_MODE,
-        common.DatasetViewMode.STEREO_VIEW_FRAME_MODE,
-    ]:
-      raise NotImplementedError(
-          'Only frame modes supported as of now. Others are WIP.'
-      )
     signature = {
         common.FEATURE_SESSION_TYPE: tf.TensorSpec(shape=(), dtype=tf.string),
         common.FEATURE_IMAGE: tf.TensorSpec(shape=(), dtype=tf.string),
+        common.FEATURE_FRAME_ID: tf.TensorSpec(shape=(), dtype=tf.string),
         common.FEATURE_CAMERA_BASELINE_IN_METERS: tf.TensorSpec(
             shape=(), dtype=tf.float32
         ),
@@ -145,10 +146,7 @@ class SanpoDataset:
             shape=(4,), dtype=tf.float32
         ),
     }
-    if (
-        self.builder_config.dataset_view_mode
-        == common.DatasetViewMode.STEREO_VIEW_FRAME_MODE
-    ):
+    if self.builder_config.dataset_view_mode.is_stereo_mode():
       signature[common.FEATURE_IMAGE_RIGHT] = tf.TensorSpec(
           shape=(), dtype=tf.string
       )
@@ -361,6 +359,7 @@ class SanpoDataset:
     loaded_features = {}
     for passthrough_feature in [
         common.FEATURE_SESSION_TYPE,
+        common.FEATURE_FRAME_ID,
         common.FEATURE_CAMERA_BASELINE_IN_METERS,
         common.FEATURE_CAMERA_INTRINSICS,
         common.FEATURE_CAMERA_RIGHT_INTRINSICS,
@@ -394,46 +393,135 @@ class SanpoDataset:
 
     return loaded_features
 
-  def iter_tf_features(
-      self, sessions: List[common.SanpoSession]
+  def _samples_to_tf_frame_features(
+      self, samples: Iterator[Mapping[str, Any]]
   ) -> Iterator[Mapping[str, tf.Tensor]]:
-    """Iterate over {feature_name: tensor, ...} examples."""
-    for session in sessions:
-      for sample in session.itersamples():
-        features = {}
-        for feature_name, feature_value in sample.items():
-          if isinstance(feature_value, pathlib.Path):
-            feature_value = feature_value.as_posix()
-          features[feature_name] = tf.convert_to_tensor(feature_value)
-        yield features
+    """Iterate over {feature_name: tensor, ...} frames in a session."""
+    for sample in samples:
+      features = {}
+      for feature_name, feature_value in sample.items():
+        if isinstance(feature_value, pathlib.Path):
+          feature_value = feature_value.as_posix()
+        features[feature_name] = tf.convert_to_tensor(feature_value)
+      yield features
+
+  def _session_to_frame_dataset(
+      self, session: common.SanpoSession
+  ) -> tf.data.Dataset:
+    """Creates a tf.data.Dataset of individual frames from a SanpoSession."""
+    return self._samples_to_frame_dataset(session.all_frame_itersamples())
+
+  def _samples_to_frame_dataset(
+      self, samples: Iterator[Mapping[str, Any]]
+  ) -> tf.data.Dataset:
+    """Creates a tf.data.Dataset of frames from the given samples."""
+    tf_features = functools.partial(
+        self._samples_to_tf_frame_features, samples=samples
+    )
+    return tf.data.Dataset.from_generator(
+        tf_features,
+        output_signature=self._get_tensor_signature(),
+    )
+
+  def _session_to_video_datasets(
+      self, session: common.SanpoSession
+  ) -> Iterator[tf.data.Dataset]:
+    """Creates tf.data.Datasets of video clips from a SanpoSession."""
+    for video_samples in session.video_itersamples():
+      ds = self._samples_to_frame_dataset(video_samples)
+
+      if self.builder_config.video_frame_stride:
+        ds = ds.shard(self.builder_config.video_frame_stride, 0)
+
+      if not self.builder_config.num_video_frames:
+        raise ValueError('num_video_frames must be specified')
+
+      # Batch the frames into video clips of length num_video_frames. We must
+      # use drop_remainder=True to ensure each video clip has the exact same
+      # number of frames because the later mapping to load the data files
+      # requires rebatching. This is done so that all the video clips across
+      # multiple sessions can be shuffled together before performing the
+      # expensive data loading step.
+      ds = ds.batch(
+          self.builder_config.num_video_frames,
+          drop_remainder=True,
+      )
+
+      yield ds
 
   def to_tf_data(
       self,
+      split_name: Optional[str] = None,
   ) -> Union[Tuple[tf.data.Dataset, tf.data.Dataset], tf.data.Dataset]:
-    """Create features for elements of the frame."""
-    result_datasets = []
-    splits = [_TRAIN_SPLITNAME, _TEST_SPLITNAME]
-    for split_name in splits:
-      assert split_name in self._data_sessions
-      iter_tf_features = functools.partial(
-          self.iter_tf_features, sessions=self._data_sessions[split_name]
-      )
-      dataset = tf.data.Dataset.from_generator(
-          iter_tf_features, output_signature=self._get_tensor_signature()
-      )
+    """Creates tf.data.Datasets for train and test splits of the session.
 
-      # Dataset's features now contain filenames. Below we shuffle and then
-      # load the data from files.
+    Args:
+      split_name: If specified, returns a single dataset for this split. If
+        None, a dataset for each train and test split is returned. Default: None
+
+    Returns:
+      A tuple containing the train and test datasets, or a single dataset if
+      split_name was specified.
+    """
+    result_datasets = []
+    if split_name and split_name not in _DATA_SPLITNAMES:
+      raise ValueError('split_name must be one of {}'.format(_DATA_SPLITNAMES))
+
+    split_names = [split_name] if split_name else _DATA_SPLITNAMES
+    for split_name in split_names:
+      sessions = self._data_sessions[split_name]
+
+      # Convert each session into a dataset.
+      if self.builder_config.dataset_view_mode.is_video_mode():
+        # For video mode the dataset will contain one or more 'video clips'
+        # (batch of frames).
+        session_datasets = itertools.chain.from_iterable(
+            map(self._session_to_video_datasets, sessions)
+        )
+      else:
+        # For frame mode the dataset will contain one sample for each video
+        # frame.
+        session_datasets = map(self._session_to_frame_dataset, sessions)
+
+      # Concat all the session datasets together.
+      dataset = next(session_datasets)
+      for ds in session_datasets:
+        dataset = dataset.concatenate(ds)
+
+      # Cache the dataset before shuffling.
+      dataset = dataset.cache()
+
+      # The dataset features now contain filenames. Below we shuffle the
+      # data together (frames or video clips) and then load the data from files.
+      # Since loading the data is expensive and uses significant memory, it's
+      # much more efficient to shuffle before loading the data.
       if self.builder_config.shuffle_buffer_size > 1:
         dataset = dataset.shuffle(
             self.builder_config.shuffle_buffer_size,
             reshuffle_each_iteration=True,
         )
+
+      # For video mode, unbatch the video clips into individual frames so we can
+      # apply the mapping function to load the data files.
+      if self.builder_config.dataset_view_mode.is_video_mode():
+        dataset = dataset.unbatch()
+
+      # Map the frames by loading the underlying data files into memory.
+      # For video mode this is done deterministicly to preserve the order of
+      # frames for rebatching back into video clips.
+      map_deterministic = self.builder_config.dataset_view_mode.is_video_mode()
       dataset = dataset.map(
           self._load_data_files,
           num_parallel_calls=tf.data.AUTOTUNE,
-          deterministic=False,
+          deterministic=map_deterministic,
       )
+
+      # For video mode, rebatch the frames into videos. Since the number of
+      # frames in each video is fixed, this is guaranteed that each frame will
+      # return to its correct corresponding video clip.
+      if self.builder_config.dataset_view_mode.is_video_mode():
+        dataset = dataset.batch(self.builder_config.num_video_frames)
+
       result_datasets.append(dataset)
 
     if len(result_datasets) == 1:

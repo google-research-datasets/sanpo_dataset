@@ -51,6 +51,7 @@ CAMERA_POSES_CSV_FILENAME = 'camera_poses.csv'
 
 
 FEATURE_SESSION_TYPE = 'session_type'
+FEATURE_FRAME_ID = 'frame_id'
 FEATURE_IMAGE = 'image'
 FEATURE_IMAGE_RIGHT = 'image_right'
 FEATURE_METRIC_DEPTH_LABEL = 'metric_depth'
@@ -123,6 +124,20 @@ class DatasetViewMode(enum.Enum):
   STEREO_VIEW_VIDEO_MODE = 'stereo_view_video_mode'
   MONO_VIEW_FRAME_MODE = 'mono_view_frame_mode'
   MONO_VIEW_VIDEO_MODE = 'mono_view_video_mode'
+
+  def is_stereo_mode(self) -> bool:
+    """Whether this mode includes stereo images/video."""
+    return self in [
+        DatasetViewMode.STEREO_VIEW_FRAME_MODE,
+        DatasetViewMode.STEREO_VIEW_VIDEO_MODE,
+    ]
+
+  def is_video_mode(self) -> bool:
+    """Whether this mode includes video rather than a single image frame."""
+    return self in [
+        DatasetViewMode.STEREO_VIEW_VIDEO_MODE,
+        DatasetViewMode.MONO_VIEW_VIDEO_MODE,
+    ]
 
 
 class FeatureFilterOption(enum.Enum):
@@ -497,32 +512,35 @@ class SanpoSession:
       )
     return self._camera_intrinsics[(sensor_name, lens_name)]
 
+  def _compute_n_frames(self):
+    """Computes the frames for each sensor and caches the result."""
+    self._sensor_n_frames = {}
+    for sensor_name in self.sensor_names:
+      ex = FrameExample.from_session(self, sensor_name, 0)
+      if ex is None:
+        self._sensor_n_frames[sensor_name] = 0
+      else:
+        lens_name = self.lens_names(sensor_name)[0]
+        path = ex.rgb_filename(lens_name)
+        files = list(path.parent.iterdir())
+        files = [
+            file
+            for file in files
+            if str(file).endswith(IMAGE_FILENAME_EXTENSION)
+        ]
+        self._sensor_n_frames[sensor_name] = len(files)
+
   def n_frames(self, sensor_name: str) -> int:
     """Returns number of frames in the session's sensor."""
     # Just compute once.
     if not hasattr(self, '_sensor_n_frames'):
-      self._sensor_n_frames = {}
-      for sensor_name in self.sensor_names:
-        ex = FrameExample.from_session(self, sensor_name, 0)
-        if ex is None:
-          self._sensor_n_frames[sensor_name] = 0
-        else:
-          lens_name = self.lens_names(sensor_name)[0]
-          path = ex.rgb_filename(lens_name)
-          files = list(path.parent.iterdir())
-          files = [
-              file
-              for file in files
-              if str(file).endswith(IMAGE_FILENAME_EXTENSION)
-          ]
-          self._sensor_n_frames[sensor_name] = len(files)
+      self._compute_n_frames()
+
     return self._sensor_n_frames[sensor_name]
 
-  def _skip_frame_example(
-      self, ex: 'FrameExample', lens_name: str, stereo_mode: bool
-  ) -> bool:
+  def _skip_frame_example(self, ex: 'FrameExample', lens_name: str) -> bool:
     """Checks whether to skip the sample."""
-    if stereo_mode and not ex.has_right_lens:
+    if self.config.dataset_view_mode.is_stereo_mode() and not ex.has_right_lens:
       # Skip example if stereo mode is requested but there is no right lens.
       return True
 
@@ -557,12 +575,19 @@ class SanpoSession:
       return True
     return False
 
-  def itersamples_frame_mode(
-      self,
-      stereo_mode: bool = False,
-  ) -> Iterator[Mapping[str, Any]]:
-    """Yield sample dictionary based on the view and config in frame mode."""
+  def all_frame_itersamples(self) -> Iterator[Mapping[str, Any]]:
+    return self._itersamples()
+
+  def video_itersamples(self) -> Iterator[Iterator[Mapping[str, Any]]]:
     for sensor_name in self.sensor_names:
+      yield self._itersamples(sensor_name)
+
+  def _itersamples(
+      self, sensor_name: Optional[str] = None
+  ) -> Iterator[Mapping[str, Any]]:
+    """Yield frame sample dictionary based on the view and config."""
+    sensors = [sensor_name] if sensor_name else self.sensor_names
+    for sensor_name in sensors:
       for frame_num in range(self.n_frames(sensor_name)):
         ex = FrameExample.from_session(self, sensor_name, frame_num)
         if ex is None:
@@ -576,7 +601,7 @@ class SanpoSession:
         # "camera_translation": [b,3]
         # "camera_quaternions": [b,4]
 
-        if self._skip_frame_example(ex, LEFT_LENS_NAME, stereo_mode):
+        if self._skip_frame_example(ex, LEFT_LENS_NAME):
           continue
 
         _, _, _, _, baseline_in_mm = self.camera_intrinsics(
@@ -587,11 +612,12 @@ class SanpoSession:
             FEATURE_SESSION_TYPE: self.type,
             FEATURE_IMAGE: str(ex.rgb_filename(LEFT_LENS_NAME)),
             FEATURE_CAMERA_BASELINE_IN_METERS: baseline_in_mm / 1000.0,
+            FEATURE_FRAME_ID: ex.frame_id(),
         }
 
         included_camera_metadata_lenses = [LEFT_LENS_NAME]
 
-        if stereo_mode:
+        if self.config.dataset_view_mode.is_stereo_mode():
           sample[FEATURE_IMAGE_RIGHT] = str(ex.rgb_filename(RIGHT_LENS_NAME))
           included_camera_metadata_lenses.append(RIGHT_LENS_NAME)
 
@@ -614,30 +640,33 @@ class SanpoSession:
 
         if self.config.feature_metric_depth.to_include():
           metric_depth_filename = ex.metric_depth_filename(LEFT_LENS_NAME)
-          sample[FEATURE_METRIC_DEPTH_LABEL] = str(metric_depth_filename)
-          sample[FEATURE_HAS_METRIC_DEPTH_LABEL] = (
-              metric_depth_filename.exists()
+          metric_depth_exists = metric_depth_filename.exists()
+          sample[FEATURE_METRIC_DEPTH_LABEL] = (
+              str(metric_depth_filename) if metric_depth_exists else ''
           )
+          sample[FEATURE_HAS_METRIC_DEPTH_LABEL] = metric_depth_exists
 
         if self.config.feature_panoptic_mask.to_include():
           segmentation_mask_filename = ex.segmentation_mask_filename(
               LEFT_LENS_NAME
           )
-          sample[FEATURE_PANOPTIC_MASK_LABEL] = str(segmentation_mask_filename)
-          sample[FEATURE_HAS_PANOPTIC_MASK_LABEL] = (
-              segmentation_mask_filename.exists()
+          segmentation_mask_exists = segmentation_mask_filename.exists()
+          sample[FEATURE_PANOPTIC_MASK_LABEL] = (
+              str(segmentation_mask_filename)
+              if segmentation_mask_exists
+              else ''
           )
+          sample[FEATURE_HAS_PANOPTIC_MASK_LABEL] = segmentation_mask_exists
 
         if self.config.feature_metric_depth_zed.to_include():
           metric_zed_depth_filename = ex.metric_depth_zed_filename(
               LEFT_LENS_NAME
           )
-          sample[FEATURE_METRIC_DEPTH_ZED_LABEL] = str(
-              metric_zed_depth_filename
+          metric_zed_depth_exists = metric_zed_depth_filename.exists()
+          sample[FEATURE_METRIC_DEPTH_ZED_LABEL] = (
+              str(metric_zed_depth_filename) if metric_zed_depth_exists else ''
           )
-          sample[FEATURE_HAS_METRIC_DEPTH_ZED_LABEL] = (
-              metric_zed_depth_filename.exists()
-          )
+          sample[FEATURE_HAS_METRIC_DEPTH_ZED_LABEL] = metric_zed_depth_exists
 
         if self.config.feature_camera_pose.to_include():
           sample[FEATURE_TRACKING_STATE] = self.camera_poses(sensor_name)[
@@ -651,26 +680,6 @@ class SanpoSession:
           ][FEATURE_CAMERA_QUATERNIONS]
 
         yield sample
-
-  def itersamples(
-      self,
-  ) -> Iterator[Mapping[str, Any]]:
-    """Yield sample dictionary based on the view and config."""
-    if self.config.dataset_view_mode not in [
-        DatasetViewMode.MONO_VIEW_FRAME_MODE,
-        DatasetViewMode.STEREO_VIEW_FRAME_MODE,
-    ]:
-      raise ValueError(
-          '`%s` not currently supported'
-          % self.config.dataset_view_mode.value.upper()
-      )
-
-    # TODO(sagarwaghmare, kwilber): Add support for other DatasetViewMode modes.
-
-    return self.itersamples_frame_mode(
-        stereo_mode=self.config.dataset_view_mode
-        == DatasetViewMode.STEREO_VIEW_FRAME_MODE
-    )
 
 
 @dataclasses.dataclass
@@ -709,6 +718,17 @@ class FrameExample:
   def has_camera_pose(self):
     # all examples have some camera pose
     return True
+
+  def frame_id(self) -> str:
+    return '%s/%s/%d' % (
+        str(
+            self.session.base_path.relative_to(
+                self.session.base_path.parent.parent
+            )
+        ),
+        self.sensor_name,
+        self.frame_num,
+    )
 
   def rgb_filename(self, lens_name: str) -> pathlib.Path:
     return (

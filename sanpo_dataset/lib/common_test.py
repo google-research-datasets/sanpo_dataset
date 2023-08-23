@@ -29,8 +29,14 @@ _SYNTHETIC_SESSIONS_PATH = (
 )
 _REAL_SESSION_NAME = 'real_session'
 _SYNTHETIC_SESSION_NAME = 'synthetic_session'
-_N_REAL_CAMERA_CHEST_VIDEOS = 73
-_N_REAL_CAMERA_HEAD_VIDEOS = 73
+_N_REAL_CAMERA_CHEST_FRAMES = 73
+_N_REAL_CAMERA_HEAD_FRAMES = 60
+
+
+def _parse_frame_id(frame_id: str):
+  """Parses a frame id feature into a (sensor_id, frame_num)."""
+  parts = frame_id.rsplit('/', 1)
+  return (parts[0], int(parts[1]))
 
 
 class CommonTest(tf.test.TestCase):
@@ -71,7 +77,7 @@ class CommonTest(tf.test.TestCase):
     camera_poses = common.load_camera_poses_from_csv(
         os.path.join(self.real_session_dir, 'camera_chest', 'camera_poses.csv')
     )
-    self.assertLen(camera_poses, _N_REAL_CAMERA_CHEST_VIDEOS)
+    self.assertLen(camera_poses, _N_REAL_CAMERA_CHEST_FRAMES)
     self.assertFalse(camera_poses[0]['tracking_state'])
     self.assertArrayNear(
         camera_poses[0]['camera_translation_in_m'], [0.0, 0.0, 0.0], 1e-6
@@ -120,7 +126,12 @@ class CommonTest(tf.test.TestCase):
       self.assertEqual(sanpo_session.lens_names(sensor_name), ['left', 'right'])
       _ = sanpo_session.camera_poses(sensor_name)
       self.assertEqual(
-          sanpo_session.n_frames(sensor_name), _N_REAL_CAMERA_CHEST_VIDEOS
+          sanpo_session.n_frames(sensor_name),
+          (
+              _N_REAL_CAMERA_CHEST_FRAMES
+              if sensor_name == 'camera_chest'
+              else _N_REAL_CAMERA_HEAD_FRAMES
+          ),
       )
 
   def test_frame_example(self):
@@ -180,17 +191,17 @@ class CommonTest(tf.test.TestCase):
         1,
     )
 
-  def test_iter_samples_panoptic_frame_mode(self):
+  def test_all_frame_iter_samples_panoptic_frame_mode(self):
     sanpo_session = common.SanpoSession(
         self.real_session_dir, dataclasses.replace(common.PANOPTIC_SANPO_CONFIG)
     )
     count = 0
-    for example in sanpo_session.itersamples():
-      self.assertLen(example, 6)
+    for example in sanpo_session.all_frame_itersamples():
+      self.assertLen(example, 7)
       count += 1
-    self.assertEqual(count, _N_REAL_CAMERA_CHEST_VIDEOS)
+    self.assertEqual(count, _N_REAL_CAMERA_CHEST_FRAMES)
 
-  def test_iter_samples_all_optional_frame_mode(self):
+  def test_all_frame_iter_samples_all_optional_frame_mode(self):
     config = dataclasses.replace(common.PANOPTIC_SANPO_CONFIG)
     config.feature_panoptic_mask = common.FeatureFilterOption.INCLUDE
     config.feature_metric_depth = common.FeatureFilterOption.INCLUDE
@@ -198,24 +209,55 @@ class CommonTest(tf.test.TestCase):
     config.feature_camera_pose = common.FeatureFilterOption.INCLUDE
     sanpo_session = common.SanpoSession(self.real_session_dir, config)
     count = 0
-    for example in sanpo_session.itersamples():
-      self.assertLen(example, 13)
+    for example in sanpo_session.all_frame_itersamples():
+      self.assertLen(example, 14)
       count += 1
     self.assertEqual(
-        count, _N_REAL_CAMERA_CHEST_VIDEOS + _N_REAL_CAMERA_HEAD_VIDEOS
+        count, _N_REAL_CAMERA_CHEST_FRAMES + _N_REAL_CAMERA_HEAD_FRAMES
     )
 
-  def test_iter_samples_stereo_mode(self):
+  def test_all_frame_iter_samples_stereo_mode(self):
     config = dataclasses.replace(common.DEPTH_SANPO_CONFIG)
     config.dataset_view_mode = common.DatasetViewMode.STEREO_VIEW_FRAME_MODE
     sanpo_session = common.SanpoSession(self.real_session_dir, config)
     count = 0
-    for example in sanpo_session.itersamples():
+    for example in sanpo_session.all_frame_itersamples():
       self.assertIn('image', example)
       self.assertIn('image_right', example)
       count += 1
     self.assertEqual(
-        count, _N_REAL_CAMERA_CHEST_VIDEOS + _N_REAL_CAMERA_HEAD_VIDEOS
+        count, _N_REAL_CAMERA_CHEST_FRAMES + _N_REAL_CAMERA_HEAD_FRAMES
+    )
+
+  def test_video_iter_samples(self):
+    config = dataclasses.replace(common.DEPTH_SANPO_CONFIG)
+    config.dataset_view_mode = common.DatasetViewMode.STEREO_VIEW_VIDEO_MODE
+    sanpo_session = common.SanpoSession(self.real_session_dir, config)
+    video_count = 0
+    total_frame_count = 0
+    for video_iter in sanpo_session.video_itersamples():
+      video_count += 1
+
+      last_sensor_id = None
+      last_frame_num = None
+      for example in video_iter:
+        total_frame_count += 1
+        self.assertIn('image', example)
+        self.assertIn('image_right', example)
+        sensor_id, frame_num = _parse_frame_id(example[common.FEATURE_FRAME_ID])
+
+        # Make sure each video contains sequential frames from the same sensor.
+        if last_sensor_id:
+          self.assertEqual(sensor_id, last_sensor_id)
+          self.assertEqual(frame_num, last_frame_num + 1)
+
+        last_sensor_id = sensor_id
+        last_frame_num = frame_num
+
+    self.assertEqual(video_count, 2)
+    self.assertEqual(
+        total_frame_count,
+        _N_REAL_CAMERA_CHEST_FRAMES + _N_REAL_CAMERA_HEAD_FRAMES,
     )
 
 

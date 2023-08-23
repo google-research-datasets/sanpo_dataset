@@ -25,21 +25,31 @@ import tensorflow as tf
 FLAGS = flags.FLAGS
 
 _SESSIONS_PATH = 'third_party/py/sanpo_dataset/lib/testdata'
-_REAL_SESSION_NAME = 'real_session'
-_SYNTHETIC_SESSION_NAME = 'synthetic_session'
-_N_REAL_CAMERA_CHEST_VIDEOS = 73
-_N_REAL_CAMERA_HEAD_VIDEOS = 73
+_N_REAL_CAMERA_CHEST_FRAMES = 73
+_N_REAL_CAMERA_HEAD_FRAMES = 60
+_N_REAL_CAMERA_CHEST_FRAMES2 = 4
+_N_SYNTHETIC_CAMERA_CHEST_FRAMES = 50
 _BATCH_SIZE = 4
 _PREFETCH_SIZE = 1
 _SINGLE_IMAGE_SIZE = (1242, 2208, 3)
 _BATCH_IMAGE_SIZE = (_BATCH_SIZE, 1242, 2208, 3)
 _SINGLE_LABEL_SIZE = (1242, 2208, 1)
-_SINGLE_CRESTEREO_DEPTH_SIZE = (720, 1280, 1)
-_BATCH_CRESTEREO_DEPTH_SIZE = (_BATCH_SIZE, 720, 1280, 1)
 _BATCH_LABEL_SIZE = (_BATCH_SIZE, 1242, 2208, 1)
 
 
-class CommonTest(tf.test.TestCase, parameterized.TestCase):
+def _one_sample_from_each(*args: tf.data.Dataset):
+  """Creates an iterator that yields exactly 1 sample from each dataset."""
+  for dataset in args:
+    yield iter(dataset).get_next()
+
+
+def _parse_frame_id(frame_id: str):
+  """Parses a frame id feature into a (sensor_id, frame_num)."""
+  parts = frame_id.rsplit('/', 1)
+  return (parts[0], int(parts[1]))
+
+
+class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):
     super().setUp()
@@ -54,8 +64,9 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         common.PANOPTIC_SANPO_CONFIG,
         include_synthetic=False,
     ).to_tf_data()
-    for sample in trainset:
-      self.assertLen(sample, 7)
+
+    for sample in _one_sample_from_each(trainset, testset):
+      self.assertLen(sample, 8)
       self.assertEqual(sample['session_type'], 'real')
       self.assertSequenceEqual(
           sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
@@ -71,25 +82,6 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       self.assertAlmostEqual(
           sample['camera_baseline_in_m'].numpy(), 0.119918846, 3
       )
-      break
-    for sample in testset:
-      self.assertLen(sample, 7)
-      self.assertEqual(sample['session_type'], 'real')
-      self.assertSequenceEqual(
-          sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
-          .numpy()
-          .tolist(),
-          [
-              0.8938735127449036,
-              1.5891084671020508,
-              0.5139687061309814,
-              0.527898371219635,
-          ],
-      )
-      self.assertAlmostEqual(
-          sample['camera_baseline_in_m'].numpy(), 0.119918846, 3
-      )
-      break
 
   def test_simple_synthetic_sanpo_dataset(self):
     trainset, testset = sanpo_dataset.SanpoDataset(
@@ -97,8 +89,9 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         common.PANOPTIC_SANPO_CONFIG,
         include_real=False,
     ).to_tf_data()
-    for sample in trainset:
-      self.assertLen(sample, 7)
+
+    for sample in _one_sample_from_each(trainset, testset):
+      self.assertLen(sample, 8)
       self.assertEqual(sample['session_type'], 'synthetic')
       self.assertSequenceEqual(
           sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
@@ -112,23 +105,6 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
           ],
       )
       self.assertEqual(sample['camera_baseline_in_m'], 0.0)
-      break
-    for sample in testset:
-      self.assertLen(sample, 7)
-      self.assertEqual(sample['session_type'], 'synthetic')
-      self.assertSequenceEqual(
-          sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
-          .numpy()
-          .tolist(),
-          [
-              0.8669397830963135,
-              1.5412262678146362,
-              0.486392080783844,
-              0.5275930166244507,
-          ],
-      )
-      self.assertEqual(sample['camera_baseline_in_m'], 0.0)
-      break
 
   @parameterized.parameters([False, True])
   def test_get_sanpo_panoptic_dataset_frame_mode(self, batch_mode: bool):
@@ -148,7 +124,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       expected_label_size = _BATCH_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 7)
+      self.assertLen(sample, 8)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -163,13 +139,8 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       else:
         self.assertTrue(sample['has_panoptic_label'])
 
-    for sample in trainset:
+    for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
-      break
-
-    for sample in testset:
-      _verify_sample(sample)
-      break
 
   @parameterized.parameters([False, True])
   def test_get_sanpo_panoptic_dataset_frame_mode_with_zed_depth(
@@ -197,7 +168,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
     expected_metric_depth_size = _SINGLE_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 11)
+      self.assertLen(sample, 12)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -213,13 +184,8 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         self.assertEqual(sample['session_type'], 'synthetic')
         self.assertFalse(sample['has_metric_depth_zed'])
 
-    for sample in trainset:
+    for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
-      break
-
-    for sample in testset:
-      _verify_sample(sample)
-      break
 
   @parameterized.parameters([False, True])
   def test_get_sanpo_depth_dataset_frame_mode(self, real_mode: bool):
@@ -243,7 +209,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
     expected_metric_depth_size = _SINGLE_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 11)
+      self.assertLen(sample, 12)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['metric_depth'], expected_metric_depth_size),
@@ -256,13 +222,8 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         self.assertEqual(sample['session_type'], 'synthetic')
         self.assertFalse(sample['has_metric_depth_zed'])
 
-    for sample in trainset:
+    for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
-      break
-
-    for sample in testset:
-      _verify_sample(sample)
-      break
 
   @parameterized.parameters([False, True])
   def test_get_sanpo_multitask_dataset_frame_mode(self, real_mode: bool):
@@ -288,7 +249,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
     expected_metric_depth_size = _SINGLE_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 14)
+      self.assertLen(sample, 15)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -305,18 +266,8 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       else:
         self.assertEqual(sample['session_type'], 'synthetic')
 
-    train_count = test_count = 0
-    for sample in trainset:
-      train_count += 1
+    for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
-      break
-
-    for sample in testset:
-      test_count += 1
-      _verify_sample(sample)
-      break
-    self.assertGreater(train_count, 0, 'no training data')
-    self.assertGreater(test_count, 0, 'no test data')
 
   def test_synthetic_dataset(self):
     trainset, testset = sanpo_dataset.SanpoDataset(
@@ -326,15 +277,14 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         include_synthetic=True,
     ).to_tf_data()
 
-    train_count = test_count = 0
-    # pylint: disable=unused-variable
-    for sample in trainset:
+    train_count = 0
+    test_count = 0
+    for _ in trainset:
       train_count += 1
-    for sample in testset:
+    for _ in testset:
       test_count += 1
-    self.assertGreater(train_count, 0, 'no synthetic training data')
-    self.assertGreater(test_count, 0, 'no synthetic test data')
-    # pylint: enable=unused-variable
+    self.assertEqual(train_count, _N_SYNTHETIC_CAMERA_CHEST_FRAMES)
+    self.assertEqual(test_count, _N_SYNTHETIC_CAMERA_CHEST_FRAMES)
 
   @parameterized.parameters([False, True])
   def test_get_sanpo_dataset_frame_mode_camera_pose(self, batch_mode: bool):
@@ -356,7 +306,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       expected_label_size = _BATCH_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 10)
+      self.assertLen(sample, 11)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -380,13 +330,8 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
             (sample['camera_quaternions_right_handed_y_up'], (4,)),
         ])
 
-    for sample in trainset:
+    for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
-      break
-
-    for sample in testset:
-      _verify_sample(sample)
-      break
 
   def test_target_shape(self):
     trainset, testset = sanpo_dataset.SanpoDataset(
@@ -394,9 +339,7 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
         common.MULTITASK_SANPO_CONFIG,
         target_shape=[108, 192],
     ).to_tf_data()
-    count = 0
-    for sample in itertools.chain(trainset, testset):
-      count += 1
+    for sample in _one_sample_from_each(trainset, testset):
       expected_shape_img = (108, 192, 3)
       expected_shape_map = (108, 192, 1)
       tf.debugging.assert_shapes([
@@ -406,7 +349,6 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
           (sample['metric_depth'], expected_shape_map),
           (sample['metric_depth_zed'], expected_shape_map),
       ])
-    self.assertGreater(count, 0)
 
   def test_invalid_target_shape(self):
     with self.assertRaises(ValueError):
@@ -418,50 +360,111 @@ class CommonTest(tf.test.TestCase, parameterized.TestCase):
       for _ in itertools.chain(trainset, testset):
         pass
 
+  def test_stereo_frame_mode(self):
+    trainset, testset = sanpo_dataset.SanpoDataset(
+        self.sessions_dir,
+        common.PANOPTIC_SANPO_CONFIG,
+        include_synthetic=False,
+        dataset_view_mode=common.DatasetViewMode.STEREO_VIEW_FRAME_MODE,
+    ).to_tf_data()
+    for sample in _one_sample_from_each(trainset, testset):
+      self.assertLen(sample, 10)
+      self.assertIn('image', sample)
+      self.assertIn('image_right', sample)
+      self.assertSequenceEqual(
+          sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
+          .numpy()
+          .tolist(),
+          [
+              0.8938735127449036,
+              1.5891084671020508,
+              0.5139687061309814,
+              0.527898371219635,
+          ],
+      )
+      self.assertSequenceEqual(
+          sample['camera_right_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
+          .numpy()
+          .tolist(),
+          [
+              0.8938735127449036,
+              1.5891084671020508,
+              0.5139687061309814,
+              0.527898371219635,
+          ],
+      )
+      self.assertAlmostEqual(
+          sample['camera_baseline_in_m'].numpy(), 0.119918846, 3
+      )
+      break
 
-def test_stereo_frame_mode(self):
-  trainset, testset = sanpo_dataset.SanpoDataset(
-      self.sessions_dir,
-      common.PANOPTIC_SANPO_CONFIG,
-      include_synthetic=False,
-      dataset_view_mode=common.DatasetViewMode.STEREO_VIEW_FRAME_MODE,
-  ).to_tf_data()
-  for sample in trainset:
-    self.assertLen(sample, 9)
-    self.assertIn('image', sample)
-    self.assertIn('image_right', sample)
-    self.assertSequenceEqual(
-        sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
-        .numpy()
-        .tolist(),
-        [
-            0.8938735127449036,
-            1.5891084671020508,
-            0.5139687061309814,
-            0.527898371219635,
-        ],
-    )
-    self.assertSequenceEqual(
-        sample['camera_right_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
-        .numpy()
-        .tolist(),
-        [
-            0.8938735127449036,
-            1.5891084671020508,
-            0.5139687061309814,
-            0.527898371219635,
-        ],
-    )
-    self.assertAlmostEqual(
-        sample['camera_baseline_in_m'].numpy(), 0.119918846, 3
-    )
-    break
+  def test_video_mode(self):
+    num_frames = 4
 
-  for sample in testset:
-    self.assertLen(sample, 9)
-    self.assertIn('image', sample)
-    self.assertIn('image_right', sample)
-    break
+    trainset, _ = sanpo_dataset.SanpoDataset(
+        self.sessions_dir,
+        common.MULTITASK_SANPO_CONFIG,
+        include_synthetic=False,
+        dataset_view_mode=common.DatasetViewMode.STEREO_VIEW_VIDEO_MODE,
+        num_video_frames=num_frames,
+    ).to_tf_data()
+
+    sample_count = 0
+    for sample in trainset:
+      self.assertEqual(
+          sample[common.FEATURE_IMAGE].shape,
+          tf.TensorShape((num_frames,) + _SINGLE_IMAGE_SIZE),
+      )
+      self.assertEqual(
+          sample[common.FEATURE_IMAGE_RIGHT].shape,
+          tf.TensorShape((num_frames,) + _SINGLE_IMAGE_SIZE),
+      )
+      self.assertEqual(
+          sample[common.FEATURE_CAMERA_TRANSLATIONS].shape,
+          tf.TensorShape((num_frames, 3)),
+      )
+      sample_count += 1
+
+      # Check that all frames in the video clip are sequential and from the
+      # same session/sensor.
+      last_sensor_id = None
+      last_frame_num = None
+      for frame_id_tensor in sample[common.FEATURE_FRAME_ID]:
+        frame_id = frame_id_tensor.numpy().decode('utf-8')
+        sensor_id, frame_num = _parse_frame_id(frame_id)
+
+        if last_sensor_id:
+          self.assertEqual(
+              sensor_id,
+              last_sensor_id,
+              'Video clip contains frame from different sensor',
+          )
+          self.assertEqual(
+              frame_num,
+              last_frame_num + 1,
+              'Video clip contains non-sequential frames',
+          )
+
+        last_sensor_id = sensor_id
+        last_frame_num = frame_num
+
+    expected_sample_count = (
+        int(_N_REAL_CAMERA_HEAD_FRAMES / num_frames)
+        + int(_N_REAL_CAMERA_CHEST_FRAMES / num_frames)
+        + int(_N_REAL_CAMERA_CHEST_FRAMES2 / num_frames)
+    )
+    self.assertEqual(sample_count, expected_sample_count)
+
+  def test_single_split(self):
+    testset = sanpo_dataset.SanpoDataset(
+        self.sessions_dir,
+        common.PANOPTIC_SANPO_CONFIG,
+        include_synthetic=False,
+        dataset_view_mode=common.DatasetViewMode.MONO_VIEW_FRAME_MODE,
+    ).to_tf_data(split_name=sanpo_dataset.TEST_SPLITNAME)
+
+    sample = next(_one_sample_from_each(testset))
+    self.assertIn(common.FEATURE_IMAGE, sample)
 
 
 if __name__ == '__main__':
