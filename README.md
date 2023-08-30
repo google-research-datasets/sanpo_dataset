@@ -4,7 +4,7 @@
 <div align="center">
 
 <p align="center">
-<img src="sanpo_dataset/res/sanpo.gif" width="800px">
+<img src="res/sanpo.gif" width="800px">
 </p>
 
 <p align="center">
