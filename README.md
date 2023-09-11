@@ -118,13 +118,14 @@ We release SANPO dataset under the <a href="https://creativecommons.org/licenses
 
 If you found this dataset useful, please consider citing our paper:
 
-```
+<pre>
 @article{sanpo_dataset,
-  title={{SANPO}: A Scene Understanding, Accessibility, Navigation, Pathfinding, Obstacle Avoidance Dataset},
+  title={&#123;SANPO&#125;: A Scene Understanding, Accessibility, Navigation, Pathfinding, Obstacle Avoidance Dataset},
   author={Sagar M. Waghmare and Kimberly Wilber and Dave Hawkey and Mikhail Sirotenko and Xuan Yang and Matthew Wilson and Stephanie Debats  and Cattalyya Nuengsigkapian and Astuti Sharma and Lars Pandikow and Huisheng Wang and Hartwig Adam},
   journal={arXiv preprint arXiv:2408.TODO},
   year={2024}
 }
-```
+</pre>
 
 If you have any questions about the dataset or paper, please send us an email at <a href="mailto:sanpo_dataset@google.com">sanpo_dataset@google.com</a>.
+
