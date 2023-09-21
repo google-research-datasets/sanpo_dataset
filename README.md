@@ -25,19 +25,17 @@ counterparts. The real data is collected via an extensive data collection
 effort. The synthetic data is curated in collaboration with our external
 partner, [Parallel Domain](https://paralleldomain.com/).
 
-### Salient Features
-* Human Egocentric
-* Multi attribute stereo video dataset
-* Real as well as synthetic data
-* Depth & odometry labels
-* Temporally consistent segmentation annotations
-* High level attributes like environment type, visibility, motion etc.
-
 ### Dataset Contents
-Each sample in the dataset is denoted by as a **session**.
+SANPO has...
+* **Human Egocentric viewpoint**: All data is captured from an eye-level and chest-level perspective with real-world volunteer runners.
+* **Stereo video**: Each camera optionally includes both left and right lenses, which may be downloaded separately
+* **Real as well as synthetic data**: [Parallel Domain](https://paralleldomain.com) provides 113,000 frames of synthetic data very similar to the real-world capture conditions.
+* **Sparse and dense depth maps**. Dense depth from an ML disparity estimation method (CREstereo) and sparse depth from the ZED API.
+* **Camera poses**
+* **Temporally consistent segmentation annotations** from crowd annotators for a subset of frames
+* **High level attributes** like environment type, visibility, motion etc.
 
-A **SANPO-Real session** contains:
-
+Each **session** is a separate recording of data.  A **SANPO-Real session** contains:
 - High level session attributes like environment type, visibility etc.
 - Two stereo videos
 - Cameras' hardware information
