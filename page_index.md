@@ -1,6 +1,6 @@
 ---
 permalink: /
-layout: base
+layout: home
 title: Homepage
 ---
 
