@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="#dataset"><b>Dataset</b></a> •
-<a href="https://arxiv.org/pdf/2103.03375.pdf"><b>Paper</b></a> •
+<a href="https://arxiv.org/abs/2309.12172"><b>Paper</b></a> •
 <a href="#download-data"><b>Download Data</b></a> •
 <a href="#license--contact"><b>License & Contact</b></a>
 </p>
