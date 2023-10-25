@@ -94,7 +94,7 @@ If you found this dataset useful, please consider citing our paper:
 @article{sanpo_dataset,
   title={&#123;SANPO&#125;: A Scene Understanding, Accessibility, Navigation, Pathfinding, Obstacle Avoidance Dataset},
   author={Sagar M. Waghmare and Kimberly Wilber and Dave Hawkey and Mikhail Sirotenko and Xuan Yang and Matthew Wilson and Stephanie Debats  and Cattalyya Nuengsigkapian and Astuti Sharma and Lars Pandikow and Huisheng Wang and Hartwig Adam},
-  journal={arXiv preprint arXiv:2408.TODO},
+  journal={arXiv preprint arXiv:2309.12172},
   year={2024}
 }
 </pre>
