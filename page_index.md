@@ -1,7 +1,6 @@
 ---
 permalink: /
-layout: home
-title: Homepage
+layout: page
 ---
 
 # SANPO: A (S)cene Understanding, (A)ccessibility, (N)avigation, (P)athfinding, (O)bstacle Avoidance Dataset

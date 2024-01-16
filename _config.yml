@@ -23,4 +23,3 @@ relative_links:
 exclude:
    - sanpo_dataset/
    - lib/
-   - CHANGELOG.md
