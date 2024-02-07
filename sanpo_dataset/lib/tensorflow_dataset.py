@@ -22,6 +22,7 @@ import os
 import pathlib
 import random
 from typing import Any, Iterator, Mapping, Optional, Tuple, Union
+import warnings
 
 import numpy as np
 from sanpo_dataset.lib import common
@@ -60,16 +61,15 @@ class SanpoDataset:
             f'[{target_h}, {target_w}] which looks like [width,height].'
         )
       if abs(target_w * 9 / 16 - target_h) > 1:
-        raise ValueError(
+        warnings.warn(
             f'The target shape [{target_h},{target_w}] aspect ratio must be'
-            f' 16:9. Consider setting a target_shape of either [{target_h},'
-            f' {int(target_h*16/9)}] or [{int(target_w*9/16)}, {target_w}],'
-            ' which would preserve the image aspect ratio.\n\nSANPO does not'
-            ' perform cropping or color augmentation for you because'
-            ' preprocessing strategies can vary by application.'
+            ' 16:9 or else camera intrinsics will be incorrect at the ratio'
+            ' you requested.'
             # TODO(kwilber): add a crop tool and uncomment the below lines
             # f'To crop the image, you can use the `common.crop_*` '
             # f'family of functions which properly adjust camera intrinsics.'
+            ,
+            UserWarning,
         )
 
     # TODO(kwilber): Verify the config.
@@ -177,6 +177,9 @@ class SanpoDataset:
       signature[common.FEATURE_HAS_PANOPTIC_MASK_LABEL] = tf.TensorSpec(
           shape=(), dtype=tf.bool
       )
+      signature[common.FEATURE_SEGMENTATION_ANNOTATION_TYPE] = tf.TensorSpec(
+          shape=(), dtype=tf.string
+      )
 
     if self.builder_config.feature_camera_pose.to_include():
       signature[common.FEATURE_TRACKING_STATE] = tf.TensorSpec(
@@ -202,7 +205,9 @@ class SanpoDataset:
       resize_method = tf.image.ResizeMethod.NEAREST_NEIGHBOR
     else:
       resize_method = tf.image.ResizeMethod.BILINEAR
-    return tf.image.resize(tensor, [target_h, target_w], method=resize_method)
+    return tf.image.resize_with_pad(
+        tensor, target_h, target_w, method=resize_method
+    )
 
   def _tf_decode_image(self, filename: tf.Tensor) -> tf.Tensor:
     # can't use tf.io.decode_image here because
@@ -282,6 +287,9 @@ class SanpoDataset:
           common.FEATURE_INSTANCE_ID: instance_id,
           common.FEATURE_HAS_PANOPTIC_MASK_LABEL: tf.convert_to_tensor(
               features[common.FEATURE_HAS_PANOPTIC_MASK_LABEL]
+          ),
+          common.FEATURE_SEGMENTATION_ANNOTATION_TYPE: tf.convert_to_tensor(
+              features[common.FEATURE_SEGMENTATION_ANNOTATION_TYPE]
           ),
       }
 

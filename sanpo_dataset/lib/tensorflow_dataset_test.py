@@ -24,7 +24,7 @@ import tensorflow as tf
 
 FLAGS = flags.FLAGS
 
-_SESSIONS_PATH = 'third_party/py/sanpo_dataset/lib/testdata'
+_SESSIONS_PATH = 'sanpo_dataset/sanpo_dataset/lib/testdata'
 _N_REAL_CAMERA_CHEST_FRAMES = 73
 _N_REAL_CAMERA_HEAD_FRAMES = 60
 _N_REAL_CAMERA_CHEST_FRAMES2 = 4
@@ -55,7 +55,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
     super().setUp()
 
     self.sessions_dir = os.path.join(
-        FLAGS.test_srcdir, 'goo''gle3', _SESSIONS_PATH
+        FLAGS.test_srcdir, _SESSIONS_PATH
     )
 
   def test_simple_real_sanpo_dataset(self):
@@ -66,7 +66,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
     ).to_tf_data()
 
     for sample in _one_sample_from_each(trainset, testset):
-      self.assertLen(sample, 8)
+      self.assertLen(sample, 9)
       self.assertEqual(sample['session_type'], 'real')
       self.assertSequenceEqual(
           sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
@@ -91,7 +91,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
     ).to_tf_data()
 
     for sample in _one_sample_from_each(trainset, testset):
-      self.assertLen(sample, 8)
+      self.assertLen(sample, 9)
       self.assertEqual(sample['session_type'], 'synthetic')
       self.assertSequenceEqual(
           sample['camera_intrinsics_as_ratios_of_image_size_fx_fy_cx_cy']
@@ -124,7 +124,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
       expected_label_size = _BATCH_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 8)
+      self.assertLen(sample, 9)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -135,6 +135,12 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
         self.assertTrue(all(sample['has_panoptic_label']))
         tf.debugging.assert_shapes([
             (sample['has_panoptic_label'], (_BATCH_SIZE,)),
+        ])
+        tf.debugging.assert_shapes([
+            (
+                sample[common.FEATURE_SEGMENTATION_ANNOTATION_TYPE],
+                (_BATCH_SIZE,),
+            ),
         ])
       else:
         self.assertTrue(sample['has_panoptic_label'])
@@ -168,7 +174,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
     expected_metric_depth_size = _SINGLE_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 12)
+      self.assertLen(sample, 13)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -180,9 +186,14 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
       if real_only:
         self.assertEqual(sample['session_type'], 'real')
         self.assertTrue(sample['has_metric_depth_zed'])
+        self.assertIn(
+            sample['segmentation_annotation_type'],
+            ['HUMAN_ANNOTATED', 'MACHINE_ANNOTATED'],
+        )
       else:
         self.assertEqual(sample['session_type'], 'synthetic')
         self.assertFalse(sample['has_metric_depth_zed'])
+        self.assertEqual(sample['segmentation_annotation_type'], 'SYNTHETIC')
 
     for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
@@ -249,7 +260,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
     expected_metric_depth_size = _SINGLE_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 15)
+      self.assertLen(sample, 16)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -260,6 +271,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
       self.assertIn('metric_depth', sample.keys())
       self.assertIn('has_metric_depth_zed', sample.keys())
       self.assertIn('has_panoptic_label', sample.keys())
+      self.assertIn('segmentation_annotation_type', sample.keys())
       self.assertIn('has_metric_depth', sample.keys())
       if real_mode:
         self.assertEqual(sample['session_type'], 'real')
@@ -306,7 +318,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
       expected_label_size = _BATCH_LABEL_SIZE
 
     def _verify_sample(sample):
-      self.assertLen(sample, 11)
+      self.assertLen(sample, 12)
       tf.debugging.assert_shapes([
           (sample['image'], expected_image_size),
           (sample['semantic_label'], expected_label_size),
@@ -316,6 +328,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
         self.assertTrue(all(sample['has_panoptic_label']))
         tf.debugging.assert_shapes([
             (sample['has_panoptic_label'], (_BATCH_SIZE,)),
+            (sample['segmentation_annotation_type'], (_BATCH_SIZE,)),
         ])
         tf.debugging.assert_shapes([
             (sample['tracking_state'], (_BATCH_SIZE,)),
@@ -329,6 +342,10 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
             (sample['camera_translation_in_m'], (3,)),
             (sample['camera_quaternions_right_handed_y_up'], (4,)),
         ])
+        self.assertIn(
+            sample['segmentation_annotation_type'],
+            ['HUMAN_ANNOTATED', 'MACHINE_ANNOTATED', 'SYNTHETIC'],
+        )
 
     for sample in _one_sample_from_each(trainset, testset):
       _verify_sample(sample)
@@ -355,6 +372,15 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
       trainset, testset = sanpo_dataset.SanpoDataset(
           self.sessions_dir,
           common.MULTITASK_SANPO_CONFIG,
+          target_shape=[456, 123],
+      ).to_tf_data()
+      for _ in itertools.chain(trainset, testset):
+        pass
+
+    with self.assertWarns(UserWarning):
+      trainset, testset = sanpo_dataset.SanpoDataset(
+          self.sessions_dir,
+          common.MULTITASK_SANPO_CONFIG,
           target_shape=[123, 456],
       ).to_tf_data()
       for _ in itertools.chain(trainset, testset):
@@ -368,7 +394,7 @@ class TensorflowDatasetTest(tf.test.TestCase, parameterized.TestCase):
         dataset_view_mode=common.DatasetViewMode.STEREO_VIEW_FRAME_MODE,
     ).to_tf_data()
     for sample in _one_sample_from_each(trainset, testset):
-      self.assertLen(sample, 10)
+      self.assertLen(sample, 11)
       self.assertIn('image', sample)
       self.assertIn('image_right', sample)
       self.assertSequenceEqual(

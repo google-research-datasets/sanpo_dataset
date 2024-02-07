@@ -21,7 +21,7 @@ import functools
 import json
 import os
 import pathlib
-from typing import Any, Iterator, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
 import numpy as np
 
@@ -48,6 +48,9 @@ IMAGE_FILENAME_EXTENSION = '.png'
 IMAGE_MASK_FILENAME_EXTENSION = '.png'
 DEPTH_FILENAME_EXTENSION = '.npz'
 CAMERA_POSES_CSV_FILENAME = 'camera_poses.csv'
+FRAME_SEGMENTATION_ANNOTATION_TYPE_FILENAME = (
+    'frame_segmentation_annotation_type.json'
+)
 
 
 FEATURE_SESSION_TYPE = 'session_type'
@@ -56,6 +59,7 @@ FEATURE_IMAGE = 'image'
 FEATURE_IMAGE_RIGHT = 'image_right'
 FEATURE_METRIC_DEPTH_LABEL = 'metric_depth'
 FEATURE_HAS_METRIC_DEPTH_LABEL = 'has_metric_depth'
+FEATURE_SEGMENTATION_ANNOTATION_TYPE = 'segmentation_annotation_type'
 FEATURE_PANOPTIC_MASK_LABEL = 'panoptic_label'
 FEATURE_HAS_PANOPTIC_MASK_LABEL = 'has_panoptic_label'
 FEATURE_SEMANTIC_LABEL = 'semantic_label'
@@ -102,7 +106,6 @@ def wrapped_path(path: Any) -> Any:
 
 
 class DatasetViewMode(enum.Enum):
-
   """Configures which data to include in each sample.
 
   STEREO_VIEW_FRAME_MODE: Stereo view in frame mode. Each sample contains both
@@ -433,10 +436,42 @@ class SanpoSession:
         return True
     return False
 
-  def lens_names(self, sensor_name: str) -> List[str]:
+  def segmentation_annotation_type(
+      self, input_sensor_name: str
+  ) -> Optional[Dict[int, str]]:
+    """Returns segmentation annotation type for the given sensor."""
+    # Computed once.
+    if not hasattr(self, '_sensor_frame_segmentation_annotation_type'):
+      self._sensor_frame_segmentation_annotation_type = {}
+      for sensor_name in self.sensor_names:
+        frame_segmentation_annotation_filepath = (
+            self.base_path
+            / sensor_name
+            / LEFT_LENS_NAME
+            / FRAME_SEGMENTATION_ANNOTATION_TYPE_FILENAME
+        )
+        if frame_segmentation_annotation_filepath.exists():
+          with wrapped_open(
+              frame_segmentation_annotation_filepath, 'r'
+          ) as fileptr:
+            frame_segmentation_annotation_type = json.load(fileptr)
+            self._sensor_frame_segmentation_annotation_type[sensor_name] = {}
+            for (
+                frame_num_str,
+                annotation_type,
+            ) in frame_segmentation_annotation_type.items():
+              self._sensor_frame_segmentation_annotation_type[sensor_name][
+                  int(frame_num_str)
+              ] = annotation_type
+        else:
+          self._sensor_frame_segmentation_annotation_type[sensor_name] = None
+
+    return self._sensor_frame_segmentation_annotation_type[input_sensor_name]
+
+  def lens_names(self, input_sensor_name: str) -> List[str]:
     """Returns lens names in the session's sensor."""
 
-    # Just compute once.
+    # Computed once.
     if not hasattr(self, '_sensor_lens_names'):
       self._sensor_lens_names = {}
       for sensor_name in self.sensor_names:
@@ -448,10 +483,10 @@ class SanpoSession:
         lens_names.sort()
         self._sensor_lens_names[sensor_name] = lens_names
 
-    return self._sensor_lens_names[sensor_name]
+    return self._sensor_lens_names[input_sensor_name]
 
   def camera_poses(
-      self, sensor_name: str
+      self, input_sensor_name: str
   ) -> List[Mapping[str, Union[bool, np.ndarray]]]:
     """Returns camera poses corresponding the session's sensor."""
 
@@ -465,7 +500,7 @@ class SanpoSession:
             csv_file
         )
 
-    return self._sensor_camera_poses[sensor_name]
+    return self._sensor_camera_poses[input_sensor_name]
 
   def camera_intrinsics(
       self, sensor_name: str, lens_name: str
@@ -657,6 +692,9 @@ class SanpoSession:
               else ''
           )
           sample[FEATURE_HAS_PANOPTIC_MASK_LABEL] = segmentation_mask_exists
+          sample[FEATURE_SEGMENTATION_ANNOTATION_TYPE] = (
+              ex.segmentation_annotation_type
+          )
 
         if self.config.feature_metric_depth_zed.to_include():
           metric_zed_depth_filename = ex.metric_depth_zed_filename(
@@ -713,6 +751,16 @@ class FrameExample:
   @property
   def has_segmentation_mask(self):
     return self.segmentation_mask_filename(LEFT_LENS_NAME).exists()
+
+  @functools.cached_property
+  def segmentation_annotation_type(self) -> str:
+    segmentation_annotation_type = self.session.segmentation_annotation_type(
+        self.sensor_name
+    )
+    if segmentation_annotation_type is None:
+      return 'NA'
+    else:
+      return segmentation_annotation_type[self.frame_num]
 
   @property
   def has_camera_pose(self):

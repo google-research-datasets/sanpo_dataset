@@ -23,9 +23,11 @@ import tensorflow as tf
 
 FLAGS = flags.FLAGS
 
-_REAL_SESSIONS_PATH = 'third_party/py/sanpo_dataset/lib/testdata/sanpo-real'
+_REAL_SESSIONS_PATH = (
+    'sanpo_dataset/sanpo_dataset/lib/testdata/sanpo-real'
+)
 _SYNTHETIC_SESSIONS_PATH = (
-    'third_party/py/sanpo_dataset/lib/testdata/sanpo-synthetic'
+    'sanpo_dataset/sanpo_dataset/lib/testdata/sanpo-synthetic'
 )
 _REAL_SESSION_NAME = 'real_session'
 _SYNTHETIC_SESSION_NAME = 'synthetic_session'
@@ -45,19 +47,17 @@ class CommonTest(tf.test.TestCase):
     super().setUp()
 
     self.real_sessions_base_dir = os.path.join(
-        FLAGS.test_srcdir, 'goo''gle3', _REAL_SESSIONS_PATH
+        FLAGS.test_srcdir, _REAL_SESSIONS_PATH
     )
     self.real_session_dir = os.path.join(
-        FLAGS.test_srcdir, 'goo''gle3', _REAL_SESSIONS_PATH, _REAL_SESSION_NAME
+        FLAGS.test_srcdir, _REAL_SESSIONS_PATH, _REAL_SESSION_NAME
     )
     self.synthetic_sessions_base_dir = os.path.join(
         FLAGS.test_srcdir,
-        'goo''gle3',
         _SYNTHETIC_SESSIONS_PATH,
     )
     self.synthetic_session_dir = os.path.join(
         FLAGS.test_srcdir,
-        'goo''gle3',
         _SYNTHETIC_SESSIONS_PATH,
         _SYNTHETIC_SESSION_NAME,
     )
@@ -133,6 +133,15 @@ class CommonTest(tf.test.TestCase):
               else _N_REAL_CAMERA_HEAD_FRAMES
           ),
       )
+      segmentation_annotation_type = sanpo_session.segmentation_annotation_type(
+          sensor_name
+      )
+      if sensor_name == 'camera_chest':
+        # This session->sensor_name has 73 frames. There must be annotation type
+        # for each of them.
+        self.assertLen(segmentation_annotation_type, 73)
+      else:
+        self.assertIsNone(segmentation_annotation_type)
 
   def test_frame_example(self):
     sanpo_session = common.SanpoSession(
@@ -147,6 +156,9 @@ class CommonTest(tf.test.TestCase):
       self.assertTrue(frame_example.has_right_lens)
       if sensor_name == 'camera_chest':
         self.assertTrue(frame_example.has_segmentation_mask)
+        self.assertEqual(
+            frame_example.segmentation_annotation_type, 'HUMAN_ANNOTATED'
+        )
       else:
         self.assertFalse(frame_example.has_segmentation_mask)
 
@@ -164,6 +176,7 @@ class CommonTest(tf.test.TestCase):
       self.assertFalse(frame_example.has_metric_depth_zed)
       self.assertFalse(frame_example.has_right_lens)
       self.assertTrue(frame_example.has_segmentation_mask)
+      self.assertEqual(frame_example.segmentation_annotation_type, 'SYNTHETIC')
 
   def test_sanpo_session_list(self):
     session_ids_file = tempfile.mktemp()
@@ -197,7 +210,7 @@ class CommonTest(tf.test.TestCase):
     )
     count = 0
     for example in sanpo_session.all_frame_itersamples():
-      self.assertLen(example, 7)
+      self.assertLen(example, 8)
       count += 1
     self.assertEqual(count, _N_REAL_CAMERA_CHEST_FRAMES)
 
@@ -210,7 +223,7 @@ class CommonTest(tf.test.TestCase):
     sanpo_session = common.SanpoSession(self.real_session_dir, config)
     count = 0
     for example in sanpo_session.all_frame_itersamples():
-      self.assertLen(example, 14)
+      self.assertLen(example, 15)
       count += 1
     self.assertEqual(
         count, _N_REAL_CAMERA_CHEST_FRAMES + _N_REAL_CAMERA_HEAD_FRAMES
