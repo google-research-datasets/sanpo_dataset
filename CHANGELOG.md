@@ -22,10 +22,12 @@ To release a new version (e.g. from `1.0.0` -> `2.0.0`):
 -->
 
 ## [Unreleased]
+### Fixed
+
+- Updated SANPO-Real with corrected camera poses in camera_poses_fixed.csv.
 
 ## [0.1.0] - 2022-01-01
 
 * Initial release
 
-[Unreleased]: https://github.com/google-research/sanpo_dataset/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/google-research/sanpo_dataset/releases/tag/v0.1.0
+[Unreleased]:  https://github.com/google-research-datasets/sanpo_dataset

@@ -9,11 +9,30 @@
 
 <p align="center">
 <a href="#dataset"><b>Dataset</b></a> •
-<a href="https://arxiv.org/abs/2309.12172"><b>Paper</b></a> •
+<a href="https://openaccess.thecvf.com/content/WACV2025/html/Waghmare_SANPO_A_Scene_Understanding_Accessibility_and_Human_Navigation_Dataset_WACV_2025_paper.html"><b>Paper</b></a> •
 <a href="#download-data"><b>Download Data</b></a> •
 <a href="#license--contact"><b>License & Contact</b></a>
 </p>
 
+</div>
+
+## Updates
+
+**06/05/2025**: We identified that orientation of SANPO-Real camera poses was
+not in sync with SANPO-Synthetic (right-handed, Y-up). We have rectified the
+issue and you can find the corrected camera poses for SANPO-Real in
+`fixed_camera_poses.csv`.
+
+**02/28/2025**:
+
+- [SANPO Paper](https://openaccess.thecvf.com/content/WACV2025/html/Waghmare_SANPO_A_Scene_Understanding_Accessibility_and_Human_Navigation_Dataset_WACV_2025_paper.html) was accepted and published in [WACV 2025](https://wacv2025.thecvf.com/).
+- [SANPO WACV Presentation Poster](res/sanpo-wacv25-poster.pdf):
+<div align="center">
+<p align="center">
+<a href="res/sanpo-wacv25-poster.pdf">
+<img src="res/sanpo-wacv25-poster.jpg" width="800px">
+</a>
+</p>
 </div>
 
 ## Dataset
@@ -72,7 +91,7 @@ information (PII) such as faces and license plates. If any sample is found to be
 inadequately processed, please contact us immediately at <a href="mailto:sanpo_dataset@google.com">sanpo_dataset@google.com</a>.
 
 ## Paper
-SANPO is described in [http://arxiv.org/TODO](our publication (PDF)).
+[SANPO was published in WACV 2025](https://openaccess.thecvf.com/content/WACV2025/html/Waghmare_SANPO_A_Scene_Understanding_Accessibility_and_Human_Navigation_Dataset_WACV_2025_paper.html).
 
 ## Download Data
 All SANPO data can be downloaded directly from our [Google Cloud Storage bucket](https://console.cloud.google.com/storage/browser/gresearch/sanpo_dataset/v0).
@@ -117,11 +136,13 @@ We release SANPO dataset under the <a href="https://creativecommons.org/licenses
 If you found this dataset useful, please consider citing our paper:
 
 <pre>
-@article{sanpo_dataset,
-  title={&#123;SANPO&#125;: A Scene Understanding, Accessibility, Navigation, Pathfinding, Obstacle Avoidance Dataset},
-  author={Sagar M. Waghmare and Kimberly Wilber and Dave Hawkey and Mikhail Sirotenko and Xuan Yang and Matthew Wilson and Stephanie Debats  and Cattalyya Nuengsigkapian and Astuti Sharma and Lars Pandikow and Huisheng Wang and Hartwig Adam},
-  journal={arXiv preprint arXiv:2309.12172},
-  year={2024}
+@InProceedings{Waghmare_2025_WACV,
+    author    = {Waghmare, Sagar M. and Wilber, Kimberly and Hawkey, Dave and Yang, Xuan and Wilson, Matthew and Debats, Stephanie and Nuengsigkapian, Cattalyya and Sharma, Astuti and Pandikow, Lars and Wang, Huisheng and Adam, Hartwig and Sirotenko, Mikhail},
+    title     = {SANPO: A Scene Understanding Accessibility and Human Navigation Dataset},
+    booktitle = {Proceedings of the Winter Conference on Applications of Computer Vision (WACV)},
+    month     = {February},
+    year      = {2025},
+    pages     = {7855-7864}
 }
 </pre>
 
