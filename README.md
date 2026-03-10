@@ -95,11 +95,11 @@ inadequately processed, please contact us immediately at <a href="mailto:sanpo_d
 
 ## Download Data
 All SANPO data can be downloaded directly from our [Google Cloud Storage bucket](https://console.cloud.google.com/storage/browser/gresearch/sanpo_dataset/v0).
-You can also browse through the dataset and download specific files using the `gsutil cp` command:
+You can also browse through the dataset and download specific files using the `gcloud storage cp` command:
 ```
-gsutil -m cp -r "gs://gresearch/sanpo_dataset/v0/{FILE_OR_DIR_PATH}" .
+gcloud storage cp -r "gs://gresearch/sanpo_dataset/v0/{FILE_OR_DIR_PATH}" .
 ```
-See [here](https://cloud.google.com/storage/docs/gsutil) for instructions on installing the `gsutil` tool.
+See [here](https://docs.cloud.google.com/sdk/docs/install-sdk) for instructions on installing the `gcloud` tool.
 
 ### Selective download
 All of the data is fairly large (~6TB). It may be desirable to download
@@ -126,8 +126,8 @@ EXCLUDES=$EXCLUDES'|sanpo-real'
 # Exclude SANPO-Synthetic
 EXCLUDES=$EXCLUDES'|sanpo-synthetic'
 
-echo Running: gsutil -m rsync -r -x \'${EXCLUDES#|}\' $SRC .
-gsutil -m rsync -r -x ${EXCLUDES#|} $SRC .
+echo Running: gcloud storage rsync $SRC . --recursive --exclude="${EXCLUDES#|}"
+gcloud storage rsync $SRC . --recursive --exclude="${EXCLUDES#|}"
 ```
 
 ## License & Contact
@@ -147,4 +147,3 @@ If you found this dataset useful, please consider citing our paper:
 </pre>
 
 If you have any questions about the dataset or paper, please send us an email at <a href="mailto:sanpo_dataset@google.com">sanpo_dataset@google.com</a>.
-
